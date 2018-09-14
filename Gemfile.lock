@@ -1,11 +1,22 @@
 GEM
   remote: http://rubygems.org/
   specs:
+    RecastAI (4.0.0)
+      httmultiparty (~> 0.3)
+      httparty (~> 0.13)
     addressable (2.5.2)
       public_suffix (>= 2.0.2, < 4.0)
     faraday (0.15.2)
       multipart-post (>= 1.2, < 3)
+    httmultiparty (0.3.16)
+      httparty (>= 0.7.3)
+      mimemagic
+      multipart-post
+    httparty (0.16.2)
+      multi_xml (>= 0.5.2)
     jwt (2.1.0)
+    mimemagic (0.3.2)
+    multi_xml (0.6.0)
     multipart-post (2.0.0)
     mustermann (1.0.2)
     octokit (4.9.0)
@@ -28,9 +39,10 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  RecastAI (~> 4.0)
   jwt (~> 2.1)
   octokit (~> 4.0)
   sinatra (~> 2.0)
 
 BUNDLED WITH
-   1.14.6
+   1.16.4
