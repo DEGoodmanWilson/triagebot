@@ -2,14 +2,17 @@ require 'octokit'
 require 'jwt'
 require 'httparty'
 
-
 # Notice that the private key must be in PEM format, but the newlines should be stripped and replaced with
 # the literal `\n`. This can be done in the terminal as such:
 # export GITHUB_PRIVATE_KEY=`awk '{printf "%s\\n", $0}' private-key.pem`
 PRIVATE_KEY = OpenSSL::PKey::RSA.new(ENV['GITHUB_PRIVATE_KEY'].gsub('\n', "\n")) # convert newlines
 APP_IDENTIFIER = ENV['GITHUB_APP_IDENTIFIER']
+# some configuration that you should change to reflect your own Recast.AI account
+RECASTAI_USERNAME = 'degoodmanwilson'
+RECASTAI_BOTNAME = 'triagebot'
 RECASTAI_DEV_TOKEN = ENV['RECASTAI_DEV_TOKEN']
 RECASTAI_TOKEN = ENV['RECASTAI_TOKEN']
+
 
 #####################################
 # Authenticating a GitHub App
@@ -51,33 +54,31 @@ client = Octokit::Client.new(bearer_token: installation_token)
 #####################################
 # Using the Search API
 
-# We will time each request so that we can avoid hitting GitHub's rate limiter.
-# We are allowed 30 requests per minute because as you can see above, we have authenticated
-time_between_calls = 60/30
-start = Time.now
+# We will time each request in order to avoid GitHub's rate limiter.
+# We are allowed 30 requests per minute because as you can see above, we have authenticated.
+time_between_calls = 60 / 30
 calls = 0
 
+# Repeat the following for each label we want to build an intent for:
 for label in ['bug', 'enhancement', 'question']
 
   puts "********* #{label} *********"
 
   page = 1
 
-  # GitHub, at the moment, caps search results to 1000 entries. But we're not going to count, we'll let GitHub do the
-  # counting for us. So, loop forever.
+  # GitHub currently caps search results to 1,000 entries, but we're not going to count. We'll let GitHub do the
+  # counting for us—so, loop forever.
   loop do
     before = Time.now
-    expressions = []
 
     begin
-      calls += 1
-
-      # Here is the centerpiece of this code: The call to the Search API
+      # Here is the centerpiece of this code: The call to the Search API.
       issues = client.search_issues("label:#{label}", page: page)
     rescue Octokit::UnprocessableEntity => ex
-      # GitHub will only return 1000 results. Any requests that page beyond that 1000 results will get us a 422 instead of a 200.
-      # Octokit throws an exception when we get a 422. So if we get here, it's because we've seen all the results
-      puts "Got all 1000 results. Let's move on to the next label"
+      # GitHub will only return 1,000 results. Any requests that page beyond 1,000 will result in a 422 error
+      # instead of a 200. Octokit throws an exception when we get a 422. If this happens, it's because we've seen
+      # all the results.
+      puts "Got all the results for #{label}. Let's move on to the next one."
       break
     rescue Octokit::TooManyRequests => ex
       ending = Time.now
@@ -89,8 +90,8 @@ for label in ['bug', 'enhancement', 'question']
       next # try endpoint again
     end
 
+    expressions = []
     for expression in issues['items'] do
-
       # Recast.AI wants to know what language our tagged issue titles are in. GitHub doesn't tell us, so we are going
       # to use a different endpoint on Recast.AI to ask them.
       # Notice that we have to make one API call per each expression to evaluate, and that takes a LOT OF TIME. However,
@@ -106,23 +107,21 @@ for label in ['bug', 'enhancement', 'question']
 
       expressions.push({source: expression['title'], language: {isocode: language}})
       puts language + ': ' + expression['title']
+
     end
 
-
-    # And now we bulk-post all 100 of the tagged titles to Recast.AI. Their otherwise excellent gem doesn't support this endpoint
-    # so we have to use raw HTTP requests to upload the data.
-
-    result = HTTParty.post("https://api.recast.ai/v2/users/degoodmanwilson/bots/triagebot/intents/#{label}/expressions/bulk_create",
+    # And now we bulk-post the tagged titles to Recast.AI. Their otherwise excellent gem doesn't support this
+    # endpoint, so we need to use raw HTTP requests to upload the data.
+    result = HTTParty.post("https://api.recast.ai/v2/users/#{RECASTAI_USERNAME}/bots/#{RECASTAI_BOTNAME}/intents/#{label}/expressions/bulk_create",
                            body: {expressions: expressions},
                            headers: {'Authorization' => "Token #{RECASTAI_DEV_TOKEN}"}
     )
 
-    puts result
-
     # Go to the next page of search results from GitHub.
     page += 1
 
-    # Done making the call, let's see how long it took, and then sleep if we need to, in order to avoid hitting the rate limiter.
+    # Now that we have completed the call to the GitHub Search API and the Recast.AI API, let's measure how long it
+    # took. We can always sleep if we need to, in order to avoid hitting the rate limiter.
     after = Time.now
     sleepy_time = time_between_calls - (after - before)
     puts "======== Sleeping for #{sleepy_time}"
@@ -130,5 +129,4 @@ for label in ['bug', 'enhancement', 'question']
     puts "-------- slept for #{slept}" unless slept.nil?
 
   end
-
 end
