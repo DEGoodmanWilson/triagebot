@@ -9,45 +9,30 @@ require 'recastai'
 
 set :port, 3000
 
+# Read more about GitHub Apps at https://developer.github.com/apps/
 #
-#
-# This is a boilerplate server for your own GitHub App. You can read more about
-# GitHub Apps here:
-# https://developer.github.com/apps/
-#
-# On its own, this app does absolutely nothing, except that it can be installed.
-# It's up to you to add fun functionality!
-# You can check out one example in advanced_server.rb.
-#
-# This code is a Sinatra app, for two reasons.
-# First, because the app will require a landing page for installation.
-# Second, in anticipation that you will want to receive events over a webhook
-# from GitHub, and respond to those in some way. Of course, not all apps need to
-# receive and process events! Feel free to rip out the event handling
-# code if you don't need it.
-#
-# Have fun! Please reach out to us if you have any questions, or just to show
+# Have fun and reach out to us if you have any questions, or if you just want to show
 # off what you've built!
-#
+
 class GHAapp < Sinatra::Application
 
   # Never, ever, hardcode app tokens or other secrets in your code!
-  # Always extract from a runtime source, like an environment variable.
+  # Always extract from a runtime source, such as an environment variable.
 
 
   # Notice that the private key must be in PEM format, but the newlines should
   # be stripped and replaced with the literal `\n`. This can be done in the
-  # terminal as such:
+  # terminal:
   # export GITHUB_PRIVATE_KEY=`awk '{printf "%s\\n", $0}' private-key.pem`
   PRIVATE_KEY = OpenSSL::PKey::RSA.new(ENV['GITHUB_PRIVATE_KEY'].gsub('\n', "\n")) # convert newlines
 
   # You set the webhook secret when you create your app. This verifies that the
-  # webhook is really coming from GH.
+  # webhook is really coming from GitHub.
   WEBHOOK_SECRET = ENV['GITHUB_WEBHOOK_SECRET']
 
   # Get the app identifier—an integer—from your app page after you create your
   # app. This isn't actually a secret,
-  # but it is something easier to configure at runtime.
+  # but it’s easier to configure at runtime.
   APP_IDENTIFIER = ENV['GITHUB_APP_IDENTIFIER']
 
   RECASTAI_TOKEN = ENV['RECASTAI_TOKEN']
@@ -63,12 +48,12 @@ class GHAapp < Sinatra::Application
 
   ########## Before each request to our app
   #
-  # Before each request to our app, we want to do two things
+  # Before each request to our app, we want to do two things:
   # 1) Verify that this request actually came from GitHub by validating the
   # attached signature
-  # 2) Create a new  Octokit client. Doing so requires that we construct a JWT.
+  # 2) Create a new Octokit client. Doing so requires that we construct a JWT.
   # https://jwt.io/introduction/
-  # We have to also sign that JWT with our private key, so GitHub can be sure that
+  # We have to also sign that JWT with our private key, so GitHub can be sure that:
   #  a) it came from us
   #  b) it hasn't been altered by a malicious third party
   #
@@ -88,10 +73,10 @@ class GHAapp < Sinatra::Application
     # WEBHOOK_SECRET. GitHub will cryptographically sign the request payload
     # with this secret. We will do the same, and if the results match, then we
     # know that the request is from GitHub (or, at least, from someone who knows
-    # the secret!) If they don't match, this request is an attack, and we should
+    # the secret!). If they don't match, this request is an attack, and we should
     # reject it. The signature comes in with header x-hub-signature, and looks
-    # like "sha1=123456" We should take the left hand side as the signature
-    # method, and the right hand side as the HMAC digest (the signature) itself.
+    # like "sha1=123456". We should take the left-hand side as the signature
+    # method, and the right-hand side as the HMAC digest (the signature), itself.
     their_signature_header = request.env['HTTP_X_HUB_SIGNATURE'] || 'sha1='
     method, their_digest = their_signature_header.split('=')
     our_digest = OpenSSL::HMAC.hexdigest(method, WEBHOOK_SECRET, payload_raw)
@@ -103,16 +88,16 @@ class GHAapp < Sinatra::Application
     # Now, construct a JWT and use that to authenticate a new Client object
 
     jwt_payload = {
-        # The time that this JWT was issued, _i.e._ now.
+        # The time that this JWT was issued, i.e. now.
         iat: Time.now.to_i,
 
         # How long is the JWT good for (in seconds)?
         # Let's say it can be used for 10 minutes before it needs to be refreshed.
-        # TODO we don't actually cache this token, we regenerate a new one every time!
+        # TODO we don't actually cache this token, we regenerate a new one every time.
         exp: Time.now.to_i + (10 * 60),
 
         # Your GitHub App's identifier number, so GitHub knows who issued the JWT, and know what permissions
-        # this token has.
+        # are available using the token.
         iss: APP_IDENTIFIER
     }
 
@@ -120,14 +105,15 @@ class GHAapp < Sinatra::Application
     jwt = JWT.encode(jwt_payload, PRIVATE_KEY, 'RS256')
 
     # Create the Octokit client, using the JWT as the auth token.
-    # Notice that this client will _not_ have sufficient permissions to do many interesting things!
+    # Notice that this client will not have sufficient permissions to do many interesting things.
     # We might, for particular endpoints, need to generate an installation token (using the JWT), and instantiate
-    # a new client object. But we'll cross that bridge when/if we get there!
+    # a new client object.
     @app_client ||= Octokit::Client.new(bearer_token: jwt)
 
 
-    # Now that we have an authenticated client, we need to authenticate against the installation that is
-    # triggering this event
+    # And here we check whether we need that new client, that I mentioned just above. We check if there is an
+    # installation associated with this event, and if there is, we instantiate a new Client object with the
+    # installation token.
     unless @payload['installation'].nil? || @payload['installation']['id'].nil?
       installation_id ||= @payload['installation']['id']
       installation_token = @app_client.create_app_installation_access_token(installation_id)[:token]
@@ -138,31 +124,30 @@ class GHAapp < Sinatra::Application
 
   ########## Events
   #
-  # This is the webhook endpoint that GH will call with events, and hence where we will do our event handling
+  # This is the webhook endpoint that GitHub will call with events, and where we will do our event handling.
   #
 
   post '/' do
     case request.env['HTTP_X_GITHUB_EVENT']
     when 'issues'
-      # Add code here to handle the event that you care about!
+      # `issue` events can have several actions associated. We are interested in issues that have been opened.
       handle_issue_opened_event(@payload) if @payload['action'] == 'opened'
     end
 
-    'ok' # we have to return _something_ ;)
+    'ok' # we have to return something ;)
   end
 
 
   ########## Helpers
   #
-  # These functions are going to help us do some tasks that we don't want clogging up the happy paths above, or
-  # that need to be done repeatedly. You can add anything you like here, really!
+  # These functions are going to help us with tasks that we don't want clogging up the happy paths above, or
+  # that need to be done repeatedly. You can add anything you like here.
   #
 
   helpers do
 
     #######
-    # This is our handler for the event that you care about! Of course, you'll want to change the name to reflect
-    # the actual event name! But this is where you will add code to process the event.
+    # This is our issue opened event handler.
     def handle_issue_opened_event(payload)
       repo = payload['repository']['full_name']
       issue_number = payload['issue']['number']
@@ -172,7 +157,8 @@ class GHAapp < Sinatra::Application
 
       recast_result = recast_request.analyse_text(title)
 
-      # take the highest probability intent
+      # Recast.AI will return a list of possible intents—labels—rated by their likelihood. We don't know what
+      # order they’re in, so we need to search through this list for the label with the greatest likelihood.
       best_intent = nil
       best_intent_score = 0
       for intent in recast_result.intents
@@ -191,10 +177,10 @@ class GHAapp < Sinatra::Application
   end
 
 
-  # Finally some logic to let us run this server directly from the commandline, or with Rack
-  # Don't worry too much about this code ;) But, for the curious:
+  # Finally this section holds the logic, which allows us to run this server directly from the command line, or with
+  # Rack. Don't worry too much about this code, but for the curious:
   # $PROGRAM_NAME is the executed file
   # __FILE__ is the current file
-  # If they are the same--that is, we are running this file directly, call the Sinatra run method
+  # If they are the same—that is, we are running this file directly, call the Sinatra run method.
   run! if $PROGRAM_NAME == __FILE__
 end
